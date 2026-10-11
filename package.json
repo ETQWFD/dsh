@@ -1,0 +1,21 @@
+{
+  "name": "dsh-harness-helper",
+  "version": "3.1.0",
+  "description": "DSH Harness 助手 - MC知识库(26.2支持) + 喵语模式 + 工具集",
+  "keywords": ["dsh", "dsh-plugin", "minecraft", "mc", "knowledge"],
+  "license": "MIT",
+  "main": "whale-craft-safe/index.js",
+  "type": "module",
+  "engines": {
+    "node": ">=18",
+    "dsh": ">=0.2.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": ["./whale-craft-safe/cordis.patch.yml"]
+    },
+    "client": {
+      "platform": "web"
+    }
+  }
+}
