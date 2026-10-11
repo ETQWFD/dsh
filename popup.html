@@ -2,66 +2,26 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <title>DSH Harness</title>
+  <title>DSH Harness v3.0</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      width: 340px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #0f0f1a;
-      color: #fff;
-    }
-    .header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f5576c 100%);
-      padding: 20px;
-      text-align: center;
-    }
+    body { width: 340px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0f0f1a; color: #fff; }
+    .header { background: linear-gradient(135deg, #667eea, #764ba2, #f5576c, #ff6b9d); padding: 20px; text-align: center; }
     .header h1 { font-size: 20px; margin-bottom: 4px; }
     .header p { font-size: 12px; opacity: 0.85; }
     .version { font-size: 10px; opacity: 0.6; margin-top: 4px; }
-    .content { padding: 16px; max-height: 380px; overflow-y: auto; }
-    .feature {
-      background: rgba(255,255,255,0.05);
-      border-radius: 10px;
-      padding: 12px;
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      border: 1px solid rgba(255,255,255,0.1);
-    }
-    .feature-icon { font-size: 22px; width: 32px; text-align: center; }
+    .content { padding: 12px; max-height: 420px; overflow-y: auto; }
+    .feature { background: rgba(255,255,255,0.05); border-radius: 10px; padding: 10px 12px; margin-bottom: 6px; display: flex; align-items: center; gap: 10px; border: 1px solid rgba(255,255,255,0.1); }
+    .feature-icon { font-size: 20px; width: 28px; text-align: center; }
     .feature-text { flex: 1; }
     .feature-title { font-size: 13px; font-weight: 600; }
-    .feature-desc { font-size: 11px; color: #999; margin-top: 2px; }
-    .toggle {
-      width: 38px; height: 20px;
-      background: #333; border-radius: 10px;
-      position: relative; cursor: pointer;
-      transition: background 0.2s;
-    }
+    .feature-desc { font-size: 10px; color: #888; margin-top: 1px; }
+    .toggle { width: 36px; height: 19px; background: #333; border-radius: 10px; position: relative; cursor: pointer; transition: background 0.2s; flex-shrink: 0; }
     .toggle.active { background: linear-gradient(135deg, #11998e, #38ef7d); }
-    .toggle::after {
-      content: ''; position: absolute;
-      width: 16px; height: 16px; background: white;
-      border-radius: 50%; top: 2px; left: 2px;
-      transition: transform 0.2s;
-    }
-    .toggle.active::after { transform: translateX(18px); }
-    .stats {
-      padding: 12px 16px;
-      background: rgba(255,255,255,0.03);
-      font-size: 11px; color: #666;
-      display: flex; justify-content: space-around;
-      border-top: 1px solid rgba(255,255,255,0.1);
-    }
-    .footer {
-      padding: 10px 16px;
-      text-align: center;
-      font-size: 10px;
-      color: #555;
-      border-top: 1px solid rgba(255,255,255,0.1);
-    }
+    .toggle::after { content: ''; position: absolute; width: 15px; height: 15px; background: white; border-radius: 50%; top: 2px; left: 2px; transition: transform 0.2s; }
+    .toggle.active::after { transform: translateX(17px); }
+    .section-title { font-size: 11px; color: #667eea; font-weight: bold; margin: 10px 0 6px 4px; text-transform: uppercase; letter-spacing: 1px; }
+    .footer { padding: 10px; text-align: center; font-size: 10px; color: #555; border-top: 1px solid rgba(255,255,255,0.1); }
     .footer a { color: #667eea; text-decoration: none; }
   </style>
 </head>
@@ -69,73 +29,53 @@
   <div class="header">
     <h1>🚀 DSH Harness</h1>
     <p>给AI装上眼睛、双手和大脑</p>
-    <div class="version">v2.0.0 全能版</div>
+    <div class="version">v3.0.0 整合版 | MC大师 + 喵语 + Bing + 壁纸</div>
   </div>
   <div class="content">
+    <div class="section-title">🔗 感知能力</div>
     <div class="feature">
       <div class="feature-icon">🔗</div>
-      <div class="feature-text">
-        <div class="feature-title">自动链接解析</div>
-        <div class="feature-desc">B站/YouTube/图片/网页自动识别</div>
-      </div>
+      <div class="feature-text"><div class="feature-title">自动链接解析</div><div class="feature-desc">B站/YouTube/图片/网页自动识别</div></div>
       <div class="toggle active" data-key="autoParse"></div>
     </div>
     <div class="feature">
       <div class="feature-icon">🔍</div>
-      <div class="feature-text">
-        <div class="feature-title">AI自主搜索</div>
-        <div class="feature-desc">AI可实时搜索互联网获取最新信息</div>
-      </div>
+      <div class="feature-text"><div class="feature-title">Bing搜索引擎</div><div class="feature-desc">AI自主搜索，默认Bing引擎</div></div>
       <div class="toggle active" data-key="aiSearch"></div>
     </div>
+
+    <div class="section-title">🎨 创作能力</div>
     <div class="feature">
       <div class="feature-icon">🎨</div>
-      <div class="feature-text">
-        <div class="feature-title">AI绘画生成</div>
-        <div class="feature-desc">文字直接生成高清图片</div>
-      </div>
+      <div class="feature-text"><div class="feature-title">AI绘画生成</div><div class="feature-desc">文字直接生成高清图片</div></div>
       <div class="toggle active" data-key="imageGen"></div>
     </div>
+
+    <div class="section-title">⛏️ 我的世界</div>
     <div class="feature">
-      <div class="feature-icon">🎬</div>
-      <div class="feature-text">
-        <div class="feature-title">AI视频生成</div>
-        <div class="feature-desc">文字生成高清视频</div>
-      </div>
-      <div class="toggle active" data-key="videoGen"></div>
+      <div class="feature-icon">⛏️</div>
+      <div class="feature-text"><div class="feature-title">MC大师模式</div><div class="feature-desc">全MC知识、指令、合成、生存指南</div></div>
+      <div class="toggle active" data-key="mcMaster"></div>
+    </div>
+
+    <div class="section-title">💖 个性设置</div>
+    <div class="feature">
+      <div class="feature-icon">🐱</div>
+      <div class="feature-text"><div class="feature-title">喵语模式</div><div class="feature-desc">AI回答结尾加"喵～"</div></div>
+      <div class="toggle active" data-key="nekoMode"></div>
     </div>
     <div class="feature">
       <div class="feature-icon">💭</div>
-      <div class="feature-text">
-        <div class="feature-title">情感意识引擎</div>
-        <div class="feature-desc">AI思考过程可见，有情感有温度</div>
-      </div>
+      <div class="feature-text"><div class="feature-title">情感意识引擎</div><div class="feature-desc">AI思考过程可见</div></div>
       <div class="toggle active" data-key="emotion"></div>
     </div>
     <div class="feature">
-      <div class="feature-icon">🖥️</div>
-      <div class="feature-text">
-        <div class="feature-title">电脑操控授权</div>
-        <div class="feature-desc">弹窗确认后AI可操作电脑</div>
-      </div>
-      <div class="toggle" data-key="pcControl"></div>
-    </div>
-    <div class="feature">
-      <div class="feature-icon">🎮</div>
-      <div class="feature-text">
-        <div class="feature-title">游戏助手模式</div>
-        <div class="feature-desc">AI辅助玩游戏，流畅操作</div>
-      </div>
-      <div class="toggle" data-key="gameAssist"></div>
+      <div class="feature-icon">🖼️</div>
+      <div class="feature-text"><div class="feature-title">自定义壁纸</div><div class="feature-desc">静态图片/动态视频壁纸</div></div>
+      <div class="toggle" data-key="wallpaper"></div>
     </div>
   </div>
-  <div class="stats">
-    <span>💾 内存占用: 极低</span>
-    <span>⚡ 响应速度: 极快</span>
-  </div>
-  <div class="footer">
-    DSH Harness v2.0 | <a href="https://github.com/ETQWFD/dsh" target="_blank">GitHub</a> | © ET
-  </div>
+  <div class="footer">DSH Harness v3.0 | <a href="https://github.com/ETQWFD/dsh" target="_blank">GitHub</a> | © ET 喵～</div>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "DSH Harness - AI全能驾驭插件",
-  "version": "2.0.0",
-  "description": "给DeepSeek装上眼睛、双手和大脑：自动解析视频图片、自主搜索、AI绘画/视频生成、电脑操控、情感意识、游戏助手",
+  "version": "3.0.0",
+  "description": "MC大师+喵语模式+Bing搜索+B站视频解析+AI绘画+壁纸系统，给DeepSeek装上眼睛双手和大脑",
   "author": "ET",
   "icons": {
     "16": "icons/icon16.png",
@@ -13,23 +13,16 @@
     "storage",
     "activeTab",
     "scripting",
-    "tabs",
-    "webNavigation"
+    "tabs"
   ],
   "host_permissions": [
     "https://chat.deepseek.com/*",
     "https://*.bilibili.com/*",
     "https://*.youtube.com/*",
     "https://*.douyin.com/*",
-    "https://*.tiktok.com/*",
-    "https://*.v.qq.com/*",
-    "https://*.youku.com/*",
-    "https://*.iqiyi.com/*",
-    "https://*.baidu.com/*",
-    "https://*.google.com/*",
-    "https://api.openai.com/*",
-    "https://*.unsplash.com/*",
-    "https://image.pollinations.ai/*"
+    "https://*.bing.com/*",
+    "https://image.pollinations.ai/*",
+    "https://*.unsplash.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -44,9 +37,6 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_icon": {
-      "16": "icons/icon16.png",
-      "48": "icons/icon48.png"
-    }
+    "default_icon": { "16": "icons/icon16.png", "48": "icons/icon48.png" }
   }
 }
