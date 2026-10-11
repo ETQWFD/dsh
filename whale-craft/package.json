@@ -1,0 +1,99 @@
+{
+  "name": "whale_craft",
+  "version": "0.2.0-et.262",
+  "description": "让 DSH 加入 Minecraft 服务器游玩：ET修改版，强制支持26.2版本。",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "minecraft",
+    "mineflayer",
+    "agent"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yzi1b/whale-craft.git"
+  },
+  "homepage": "https://github.com/yzi1b/whale-craft#readme",
+  "bugs": {
+    "url": "https://github.com/yzi1b/whale-craft/issues"
+  },
+  "engines": {
+    "node": ">=22",
+    "dsh": ">=0.2.0-rc.2 <0.3.0"
+  },
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/en.json": "./locale/en.json",
+    "./locale/zh.json": "./locale/zh.json",
+    "./presets/*.patch.yml": "./presets/*.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "selfcheck.mjs",
+    "cordis.patch.yml",
+    "presets",
+    "src",
+    "tools",
+    "extensions",
+    "locale",
+    "README.md",
+    "CHANGELOG.md",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "dependencies": {
+    "mineflayer": "^4.37.1",
+    "vec3": "^0.1.7"
+  },
+  "optionalDependencies": {
+    "sharp": "^0.35.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-llm": ">=0.2.0-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-tools": ">=0.2.0-rc.2 <0.3.0",
+    "@deepseek-ai/schemastery": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-llm": { "optional": true },
+    "@deepseek-ai/dsh-tools": { "optional": true },
+    "@deepseek-ai/schemastery": { "optional": true }
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-llm": "*",
+    "@deepseek-ai/dsh-tools": "0.0.1-rc.1",
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": [
+        "./cordis.patch.yml",
+        "./presets/minecraft.patch.yml",
+        "./presets/minecraft-plus.patch.yml"
+      ]
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "check": "node tools/check-core.mjs && node selfcheck.mjs",
+    "dev:web": "node tools/dev.mjs web",
+    "dev:desktop": "node tools/dev.mjs desktop",
+    "dev:link": "node tools/dev.mjs link",
+    "dev:status": "node tools/dev.mjs status",
+    "dev:stop": "node tools/dev.mjs stop",
+    "prepublishOnly": "npm run check",
+    "publish:npm": "node scripts/publish-npm.mjs",
+    "release:workflow-fix": "node scripts/land-workflow-fix.mjs"
+  }
+}

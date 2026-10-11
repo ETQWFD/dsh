@@ -1,0 +1,30 @@
+# 依赖目录（用包管理器装，不要提交）
+node_modules/
+
+# 运行期产物
+logs/
+out/
+*.log
+isolate-*.json
+
+# 本地调试环境（tools/dev.mjs 的独立 DSH_HOME：状态/账户/记忆/凭据副本都在这）
+.dev/
+
+# 打包产物（npm pack 的 tarball / 发布用 zip 别提交）
+*.tgz
+*.zip
+dist/
+
+# npm 凭据（要放本仓库的话：在这里，别提交）
+.npmrc
+
+# 插件状态（正常在 $DSH_HOME/whale_craft/，别放仓库里）
+config.json
+accounts.json
+.whale-craft/
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
