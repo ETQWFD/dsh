@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "DSH - DeepSeek增强助手",
+  "version": "1.0.0",
+  "description": "视频解析AI视觉 + 跨对话记忆 + 对话回收站，让DeepSeek拥有眼睛和记忆",
+  "author": "ET",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "storage",
+    "contextMenus",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://chat.deepseek.com/*",
+    "https://*.bilibili.com/*",
+    "https://*.youtube.com/*",
+    "https://*.douyin.com/*",
+    "https://*.tiktok.com/*",
+    "https://*.v.qq.com/*",
+    "https://*.youku.com/*",
+    "https://*.iqiyi.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://chat.deepseek.com/*"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png"
+    }
+  }
+}
