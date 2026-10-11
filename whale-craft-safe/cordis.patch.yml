@@ -1,0 +1,5 @@
+# whale_craft_safe - 安全版插件挂载声明
+# 不依赖mineflayer，纯MC知识库，保证DSH稳定启动
+- insert:
+    - id: whale_craft_safe
+      name: whale_craft_safe

@@ -1,0 +1,21 @@
+{
+  "name": "whale_craft_safe",
+  "version": "0.2.0-et.262-safe",
+  "description": "MC大师知识库 - 安全精简版，不依赖mineflayer，保证DSH稳定启动。支持26.2版本。",
+  "keywords": ["dsh", "dsh-plugin", "minecraft", "mc", "knowledge"],
+  "license": "MIT",
+  "main": "index.js",
+  "type": "module",
+  "engines": {
+    "node": ">=18",
+    "dsh": ">=0.2.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": ["./cordis.patch.yml"]
+    },
+    "client": {
+      "platform": "web"
+    }
+  }
+}
