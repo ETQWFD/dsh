@@ -1,38 +1,31 @@
 /**
- * DSH - 弹窗逻辑
+ * DSH Harness v2.0 - 弹窗逻辑
  * @author ET
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // 读取设置
-  const settings = await chrome.storage.local.get('dsh_settings');
-  const currentSettings = settings.dsh_settings || {
-    videoParseEnabled: true,
-    memoryEnabled: true,
-    recycleBinEnabled: true
-  };
+  // 读取当前设置
+  const { dsh_settings = {} } = await chrome.storage.local.get('dsh_settings');
 
-  // 初始化开关状态
+  // 初始化开关
   document.querySelectorAll('.toggle').forEach(toggle => {
     const key = toggle.dataset.key;
-    if (currentSettings[key]) {
-      toggle.classList.add('active');
-    }
+    if (dsh_settings[key]) toggle.classList.add('active');
 
     toggle.addEventListener('click', async () => {
       toggle.classList.toggle('active');
-      const newSettings = await chrome.storage.local.get('dsh_settings');
-      const updated = newSettings.dsh_settings || {};
-      updated[key] = toggle.classList.contains('active');
-      await chrome.storage.local.set({ dsh_settings: updated });
+      const current = await chrome.storage.local.get('dsh_settings');
+      const settings = current.dsh_settings || {};
+      settings[key] = toggle.classList.contains('active');
+      await chrome.storage.local.set({ dsh_settings: settings });
 
       // 通知content script
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tabs[0]) {
         chrome.tabs.sendMessage(tabs[0].id, {
-          type: 'SETTINGS_CHANGED',
+          type: 'SETTINGS_UPDATED',
           key,
-          value: updated[key]
+          value: settings[key]
         }).catch(() => {});
       }
     });

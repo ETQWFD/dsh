@@ -1,63 +1,61 @@
 /**
- * DSH - 后台服务脚本
+ * DSH Harness v2.0 - 后台服务
+ * 低内存占用，按需唤醒
  * @author ET
  */
 
-// 安装时初始化
+// 安装初始化
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
-    console.log('[DSH] 插件已安装');
-    // 初始化默认存储
+    console.log('[DSH Harness] v2.0 已安装');
     chrome.storage.local.set({
-      dsh_long_term_memory: [],
-      dsh_recycle_bin: [],
       dsh_settings: {
-        videoParseEnabled: true,
-        memoryEnabled: true,
-        recycleBinEnabled: true
-      }
+        autoParse: true,
+        aiSearch: true,
+        imageGen: true,
+        videoGen: true,
+        emotion: true,
+        gameAssist: false,
+        pcControl: false
+      },
+      dsh_thoughts: []
     });
   }
 });
 
-// 监听来自content script的消息
+// 消息处理（轻量响应）
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.type === 'PARSE_VIDEO') {
-    handleVideoParse(request.url).then(result => {
-      sendResponse({ success: true, data: result });
+  if (request.type === 'SEARCH') {
+    handleSearch(request.query).then(results => {
+      sendResponse({ success: true, results });
     }).catch(err => {
       sendResponse({ success: false, error: err.message });
     });
-    return true; // 异步响应
+    return true;
   }
 });
 
-// 视频解析处理（后台跨域请求）
-async function handleVideoParse(url) {
-  // B站视频解析
-  if (/bilibili\.com\/video\//i.test(url)) {
-    const match = url.match(/\/video\/(BV\w+|av\d+)/i);
-    if (!match) throw new Error('无法识别视频ID');
-
-    let apiUrl;
-    if (match[1].startsWith('BV')) {
-      apiUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${match[1]}`;
-    } else {
-      apiUrl = `https://api.bilibili.com/x/web-interface/view?aid=${match[1].replace('av', '')}`;
-    }
-
-    const resp = await fetch(apiUrl);
+// 搜索API（后台跨域）
+async function handleSearch(query) {
+  try {
+    const resp = await fetch(
+      `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`
+    );
     const data = await resp.json();
-    if (data.code !== 0) throw new Error(data.message);
-
     return {
-      platform: 'B站',
-      title: data.data.title,
-      author: data.data.owner.name,
-      duration: data.data.duration,
-      description: data.data.desc
+      abstract: data.Abstract,
+      abstractUrl: data.AbstractURL,
+      related: (data.RelatedTopics || []).slice(0, 5).map(t => ({
+        text: t.Text,
+        url: t.FirstURL
+      }))
     };
+  } catch (e) {
+    throw new Error('搜索失败：' + e.message);
   }
-
-  throw new Error('暂不支持的视频网站');
 }
+
+// 插件图标点击
+chrome.action.onClicked.addListener((tab) => {
+  // 打开popup（已在manifest中配置）
+});

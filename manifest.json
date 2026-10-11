@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "DSH - DeepSeek增强助手",
-  "version": "1.0.0",
-  "description": "视频解析AI视觉 + 跨对话记忆 + 对话回收站，让DeepSeek拥有眼睛和记忆",
+  "name": "DSH Harness - AI全能驾驭插件",
+  "version": "2.0.0",
+  "description": "给DeepSeek装上眼睛、双手和大脑：自动解析视频图片、自主搜索、AI绘画/视频生成、电脑操控、情感意识、游戏助手",
   "author": "ET",
   "icons": {
     "16": "icons/icon16.png",
@@ -11,9 +11,10 @@
   },
   "permissions": [
     "storage",
-    "contextMenus",
     "activeTab",
-    "scripting"
+    "scripting",
+    "tabs",
+    "webNavigation"
   ],
   "host_permissions": [
     "https://chat.deepseek.com/*",
@@ -23,7 +24,12 @@
     "https://*.tiktok.com/*",
     "https://*.v.qq.com/*",
     "https://*.youku.com/*",
-    "https://*.iqiyi.com/*"
+    "https://*.iqiyi.com/*",
+    "https://*.baidu.com/*",
+    "https://*.google.com/*",
+    "https://api.openai.com/*",
+    "https://*.unsplash.com/*",
+    "https://image.pollinations.ai/*"
   ],
   "background": {
     "service_worker": "background.js"

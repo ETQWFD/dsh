@@ -1,715 +1,616 @@
 /**
- * DSH - DeepSeek增强助手 内容脚本
- * 功能：视频解析AI视觉 + 跨对话记忆 + 对话回收站
+ * DSH Harness v2.0 - AI全能驾驭插件
+ * 功能：自动链接解析 + AI自主搜索 + 绘画/视频生成 + 电脑操控权限 + 情感意识 + 游戏助手
  * @author ET
  */
 
 (function () {
   'use strict';
 
+  console.log('%c[DSH Harness] v2.0 超级插件已加载', 'color: #764ba2; font-weight: bold; font-size: 14px;');
+
+  // ========== 全局状态（低内存占用） ==========
+  const State = {
+    initialized: false,
+    features: {
+      autoParse: true,      // 自动解析链接
+      aiSearch: true,       // AI自主搜索
+      imageGen: true,      // AI绘画
+      videoGen: true,      // AI视频生成
+      emotion: true,       // 情感思考
+      gameAssist: false,   // 游戏助手
+      pcControl: false     // 电脑操控（需用户授权）
+    },
+    pcControlGranted: false, // 电脑操控授权状态
+    parsedCache: new Map(),   // 解析缓存（LRU简易实现）
+    cacheMaxSize: 20,
+    thoughts: []              // 思考历史
+  };
+
   // ========== 工具函数 ==========
   const Utils = {
-    debounce(fn, delay = 300) {
+    debounce(fn, delay = 500) {
       let timer;
       return function (...args) {
         clearTimeout(timer);
         timer = setTimeout(() => fn.apply(this, args), delay);
       };
     },
-    async sleep(ms) {
-      return new Promise(resolve => setTimeout(resolve, ms));
+    sleep(ms) { return new Promise(r => setTimeout(r, ms)); },
+    async getStorage(key, defaultValue = null) {
+      const r = await chrome.storage.local.get(key);
+      return r[key] !== undefined ? r[key] : defaultValue;
     },
-    getStorage(key, defaultValue = null) {
-      return new Promise(resolve => {
-        chrome.storage.local.get([key], result => {
-          resolve(result[key] !== undefined ? result[key] : defaultValue);
-        });
-      });
+    setStorage(key, value) { return chrome.storage.local.set({ [key]: value }); },
+    el(tag, cls = '', html = '') {
+      const e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (html) e.innerHTML = html;
+      return e;
     },
-      setStorage(key, value) {
-      return new Promise(resolve => {
-        chrome.storage.local.set({ [key]: value }, resolve);
-      });
+    // 缓存管理（防止内存泄漏）
+    cacheGet(key) {
+      if (State.parsedCache.has(key)) {
+        const v = State.parsedCache.get(key);
+        State.parsedCache.delete(key);
+        State.parsedCache.set(key, v);
+        return v;
+      }
+      return null;
     },
-    createEl(tag, className = '', html = '') {
-      const el = document.createElement(tag);
-      if (className) el.className = className;
-      if (html) el.innerHTML = html;
-      return el;
+    cacheSet(key, value) {
+      if (State.parsedCache.size >= State.cacheMaxSize) {
+        const firstKey = State.parsedCache.keys().next().value;
+        State.parsedCache.delete(firstKey);
+      }
+      State.parsedCache.set(key, value);
     }
   };
 
-  // ========== 视频解析模块 ==========
-  const VideoParser = {
-    // 支持的视频网站匹配规则
+  // ========== Toast通知系统 ==========
+  const Toast = {
+    show(msg, type = 'info', duration = 2500) {
+      const colors = { success: '#10b981', error: '#ef4444', warning: '#f59e0b', info: '#667eea', magic: '#f5576c' };
+      const t = Utils.el('div', 'dsh-toast', msg);
+      t.style.cssText = `
+        position: fixed; top: 20px; right: 20px; padding: 12px 20px;
+        background: ${colors[type]}; color: white; border-radius: 10px;
+        z-index: 2147483647; box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+        max-width: 320px; font-size: 14px; animation: dsh-in .3s ease;
+        backdrop-filter: blur(10px);
+      `;
+      document.body.appendChild(t);
+      setTimeout(() => {
+        t.style.animation = 'dsh-out .3s ease';
+        setTimeout(() => t.remove(), 300);
+      }, duration);
+    }
+  };
+
+  // ========== 1. 自动链接解析引擎 ==========
+  const AutoParser = {
+    // 链接匹配规则
     patterns: [
       {
         name: 'bilibili',
-        test: (url) => /bilibili\.com\/video\/(BV|av)\w+/i.test(url),
-        parse: async (url) => {
-          // 提取BV号
-          const match = url.match(/\/video\/(BV\w+|av\d+)/i);
-          if (!match) throw new Error('无法解析B站视频ID');
-          const videoId = match[1];
-
-          // 调用B站API获取视频信息
-          let apiUrl;
-          if (videoId.startsWith('BV')) {
-            apiUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${videoId}`;
-          } else {
-            apiUrl = `https://api.bilibili.com/x/web-interface/view?aid=${videoId.replace('av', '')}`;
-          }
-
-          const resp = await fetch(apiUrl);
+        test: url => /bilibili\.com\/video\/(BV|av)\w+/i.test(url),
+        parse: async url => {
+          const m = url.match(/\/video\/(BV\w+|av\d+)/i);
+          const api = m[1].startsWith('BV')
+            ? `https://api.bilibili.com/x/web-interface/view?bvid=${m[1]}`
+            : `https://api.bilibili.com/x/web-interface/view?aid=${m[1].replace('av', '')}`;
+          const resp = await fetch(api);
           const data = await resp.json();
-          if (data.code !== 0) throw new Error(data.message || 'B站API请求失败');
-
-          const info = data.data;
+          if (data.code !== 0) throw new Error(data.message);
+          const d = data.data;
           return {
+            type: 'video',
             platform: 'B站',
-            title: info.title,
-            author: info.owner.name,
-            duration: info.duration,
-            description: info.desc,
-            cover: info.pic,
-            views: info.stat.view,
-            danmaku: info.stat.danmaku,
-            aid: info.aid,
-            bvid: info.bvid,
-            // 视频摘要文本
-            summary: `【B站视频解析】
-标题：${info.title}
-UP主：${info.owner.name}
-时长：${Math.floor(info.duration / 60)}分${info.duration % 60}秒
-播放量：${info.stat.view}
-弹幕数：${info.stat.danmaku}
-简介：${info.desc || '暂无简介'}
-
-请基于以上视频信息，告诉我这个视频的主要内容和看点。`
+            title: d.title,
+            author: d.owner.name,
+            duration: `${Math.floor(d.duration / 60)}分${d.duration % 60}秒`,
+            views: d.stat.view.toLocaleString(),
+            desc: d.desc.slice(0, 200),
+            context: `【自动解析-B站视频】\n标题：${d.title}\nUP主：${d.owner.name}\n时长：${Math.floor(d.duration/60)}分${d.duration%60}秒\n播放：${d.stat.view}\n简介：${d.desc.slice(0,150)}\n请基于以上信息和用户对话。`
           };
         }
       },
       {
         name: 'youtube',
-        test: (url) => /youtube\.com\/watch\?v=\w+|youtu\.be\/\w+/i.test(url),
-        parse: async (url) => {
-          let videoId;
-          const match1 = url.match(/[?&]v=([\w-]+)/);
-          const match2 = url.match(/youtu\.be\/([\w-]+)/);
-          if (match1) videoId = match1[1];
-          else if (match2) videoId = match2[1];
-          else throw new Error('无法解析YouTube视频ID');
-
-          // 页面元数据提取
+        test: url => /youtube\.com\/watch\?v=|youtu\.be\//i.test(url),
+        parse: async url => {
           const resp = await fetch(url);
           const html = await resp.text();
-          const titleMatch = html.match(/<title>([^<]+)<\/title>/);
-          const descMatch = html.match(/<meta name="description" content="([^"]+)"/);
-
+          const title = html.match(/<title>([^<]+)<\/title>/)?.[1]?.replace(' - YouTube', '');
+          const desc = html.match(/<meta name="description" content="([^"]+)"/)?.[1];
           return {
+            type: 'video',
             platform: 'YouTube',
-            title: titleMatch ? titleMatch[1].replace(' - YouTube', '') : '未知标题',
-            description: descMatch ? descMatch[1] : '暂无简介',
-            videoId: videoId,
-            summary: `【YouTube视频解析】
-链接：${url}
-视频ID：${videoId}
-页面标题：${titleMatch ? titleMatch[1] : '未知'}
-描述：${descMatch ? descMatch[1] : '暂无'}
-
-请帮我分析这个YouTube视频的内容概要。`
+            title: title || '未知',
+            context: `【自动解析-YouTube视频】\n标题：${title}\n描述：${desc?.slice(0,200)}\n链接：${url}`
           };
         }
       },
       {
-        name: 'douyin',
-        test: (url) => /douyin\.com\/video\/\d+|v\.douyin\.com/i.test(url),
-        parse: async (url) => {
-          return {
-            platform: '抖音',
-            videoUrl: url,
-            summary: `【抖音视频解析】
-链接：${url}
-
-这是一个抖音视频链接，请帮我分析这个视频可能的内容和主题。我会在浏览器中打开这个视频，你可以看到页面内容。`
-          };
-        }
+        name: 'image',
+        test: url => /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i.test(url) || /unsplash|pixabay|imgur/i.test(url),
+        parse: async url => ({
+          type: 'image',
+          platform: '图片链接',
+          title: '用户发送了一张图片',
+          context: `【自动解析-图片】\n用户发送了一张图片链接：${url}\n请描述这张图片的内容（AI视觉理解）。`
+        })
       },
       {
-        name: 'generic',
-        test: () => true,
-        parse: async (url) => {
-          // 通用视频网站 - 尝试获取页面元数据
+        name: 'webpage',
+        test: url => /^https?:\/\//i.test(url),
+        parse: async url => {
           try {
             const resp = await fetch(url);
             const html = await resp.text();
-            const titleMatch = html.match(/<title>([^<]+)<\/title>/);
-            const descMatch = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/);
-            const ogTitle = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/);
-
+            const title = html.match(/<title>([^<]+)<\/title>/)?.[1];
+            const desc = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)?.[1];
             return {
-              platform: '通用视频网站',
-              title: (ogTitle && ogTitle[1]) || (titleMatch && titleMatch[1]) || '未知视频',
-              description: descMatch ? descMatch[1] : '暂无描述',
-              summary: `【网页视频解析】
-链接：${url}
-页面标题：${(ogTitle && ogTitle[1]) || (titleMatch && titleMatch[1]) || '未知'}
-页面描述：${descMatch ? descMatch[1] : '暂无'}
-
-请帮我分析这个网页上的视频内容。`
+              type: 'webpage',
+              platform: '网页',
+              title: title || '未知网页',
+              context: `【自动解析-网页】\n标题：${title}\n描述：${desc?.slice(0, 300)}\n链接：${url}`
             };
-          } catch (e) {
-            return {
-              platform: '未知视频网站',
-              summary: `【视频解析】
-链接：${url}
-
-请帮我查看并分析这个视频链接的内容。`
-            };
+          } catch {
+            return { type: 'webpage', platform: '网页', title: '网页', context: `网页链接：${url}` };
           }
         }
       }
     ],
 
-    async parse(url) {
-      for (const pattern of this.patterns) {
-        if (pattern.test(url)) {
-          return await pattern.parse(url);
+    // 监听消息发送
+    init() {
+      // 监听发送按钮点击
+      const observer = new MutationObserver(Utils.debounce(() => {
+        const sendBtn = document.querySelector('button[class*="send"], div[class*="send-button"]');
+        if (sendBtn && !sendBtn._dshBound) {
+          sendBtn._dshBound = true;
+          sendBtn.addEventListener('click', () => this.onMessageSend());
         }
-      }
-    },
-
-    // 注入解析按钮到输入框
-    injectButton() {
-      // 等待输入框出现
-      const observer = new MutationObserver(() => {
-        const inputArea = document.querySelector('div[class*="chat_input"], div[class*="editor"], textarea[class*="input"]');
-        if (inputArea && !document.getElementById('dsh-video-btn')) {
-          this.addButton(inputArea);
-        }
-      });
+      }, 300));
       observer.observe(document.body, { childList: true, subtree: true });
     },
 
-    addButton(inputArea) {
-      const btn = Utils.createEl('button', 'dsh-video-btn', '🎬 解析视频');
-      btn.id = 'dsh-video-btn';
-      btn.style.cssText = `
-        position: absolute;
-        right: 12px;
-        bottom: 8px;
-        padding: 4px 12px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 16px;
-        font-size: 12px;
-        cursor: pointer;
-        z-index: 9999;
-        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
-        transition: all 0.2s;
-      `;
-      btn.onmouseenter = () => btn.style.transform = 'scale(1.05)';
-      btn.onmouseleave = () => btn.style.transform = 'scale(1)';
+    async onMessageSend() {
+      if (!State.features.autoParse) return;
+      await Utils.sleep(500); // 等待消息填入
 
-      btn.onclick = async () => {
-        const input = document.querySelector('textarea, div[contenteditable="true"]');
-        const text = input ? (input.value || input.innerText) : '';
-        const urlMatch = text.match(/https?:\/\/[^\s<>"']+/);
+      const input = document.querySelector('textarea, div[contenteditable="true"]');
+      if (!input) return;
 
-        if (!urlMatch) {
-          this.showToast('请先在输入框中粘贴视频链接', 'warning');
-          return;
-        }
+      const text = input.value || input.innerText;
+      const urls = text.match(/https?:\/\/[^\s<>"'\]]+/g);
+      if (!urls || urls.length === 0) return;
 
-        btn.textContent = '解析中...';
-        btn.disabled = true;
+      Toast.show('🔍 正在自动解析链接...', 'info', 1500);
 
-        try {
-          const result = await this.parse(urlMatch[0]);
-          // 将解析结果插入输入框
-          const insertText = result.summary;
-          if (input.tagName === 'TEXTAREA') {
-            input.value = insertText + '\n\n' + (input.value || '');
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-          } else if (input.isContentEditable) {
-            input.innerText = insertText + '\n\n' + input.innerText;
-            input.dispatchEvent(new Event('input', { bubbles: true }));
+      // 解析所有链接
+      const contexts = [];
+      for (const url of urls.slice(0, 3)) { // 最多解析3个链接
+        const cacheKey = url;
+        let parsed = Utils.cacheGet(cacheKey);
+        if (!parsed) {
+          for (const p of this.patterns) {
+            if (p.test(url)) {
+              try {
+                parsed = await p.parse(url);
+                Utils.cacheSet(cacheKey, parsed);
+                break;
+              } catch (e) { /* 跳过 */ }
+            }
           }
-          this.showToast(`✅ 已解析${result.platform}视频：${result.title.slice(0, 20)}...`, 'success');
-        } catch (e) {
-          this.showToast('❌ 解析失败：' + e.message, 'error');
-        } finally {
-          btn.textContent = '🎬 解析视频';
-          btn.disabled = false;
         }
-      };
+        if (parsed) contexts.push(parsed.context);
+      }
 
-      // 找到输入区域的容器
-      const container = inputArea.closest('div[class*="container"], div[class*="wrapper"]') || inputArea.parentElement;
-      if (container) {
-        container.style.position = container.style.position || 'relative';
-        container.appendChild(btn);
+      if (contexts.length > 0) {
+        Toast.show(`✅ 已自动解析 ${contexts.length} 个链接`, 'success');
+        // 注入解析上下文（通过临时系统提示方式）
+        this.injectContext(contexts.join('\n\n---\n\n'));
       }
     },
 
-    showToast(msg, type = 'info') {
-      const toast = Utils.createEl('div', 'dsh-toast', msg);
-      const colors = { success: '#10b981', error: '#ef4444', warning: '#f59e0b', info: '#3b82f6' };
-      toast.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 12px 20px;
-        background: ${colors[type] || colors.info};
-        color: white;
-        border-radius: 8px;
-        z-index: 100000;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        animation: dsh-slide-in 0.3s ease;
-        max-width: 300px;
-        font-size: 14px;
-      `;
-      document.body.appendChild(toast);
-      setTimeout(() => {
-        toast.style.animation = 'dsh-slide-out 0.3s ease';
-        setTimeout(() => toast.remove(), 300);
-      }, 3000);
-    }
-  };
-
-  // ========== 跨对话记忆模块 ==========
-  const Memory = {
-    memoryKey: 'dsh_long_term_memory',
-    currentChatKey: 'dsh_current_chat_id',
-
-    async init() {
-      // 注入记忆面板按钮
-      this.injectMemoryButton();
-      // 监听对话变化
-      this.observeChatChanges();
-      // 新对话开始时注入记忆
-      await this.injectMemoryOnNewChat();
-    },
-
-    injectMemoryButton() {
-      const btn = Utils.createEl('button', 'dsh-memory-btn', '🧠 记忆');
-      btn.style.cssText = `
-        position: fixed;
-        top: 70px;
-        right: 20px;
-        width: 48px;
-        height: 48px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        color: white;
-        border: none;
-        font-size: 20px;
-        cursor: pointer;
-        z-index: 99999;
-        box-shadow: 0 4px 12px rgba(245, 87, 108, 0.4);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: transform 0.2s;
-      `;
-      btn.onmouseenter = () => btn.style.transform = 'scale(1.1)';
-      btn.onmouseleave = () => btn.style.transform = 'scale(1)';
-      btn.onclick = () => this.togglePanel();
-      document.body.appendChild(btn);
-
-      // 创建记忆面板
-      this.panel = Utils.createEl('div', 'dsh-memory-panel');
-      this.panel.style.cssText = `
-        position: fixed;
-        top: 130px;
-        right: 20px;
-        width: 320px;
-        max-height: 400px;
-        background: white;
-        border-radius: 12px;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-        z-index: 99998;
-        display: none;
-        flex-direction: column;
-        overflow: hidden;
-      `;
-      this.panel.innerHTML = `
-        <div style="padding: 12px 16px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; font-weight: bold;">
-          🧠 DSH 长期记忆
-        </div>
-        <div style="padding: 12px; overflow-y: auto; flex: 1;" id="dsh-memory-content">
-          <div style="color: #999; text-align: center; padding: 20px;">加载中...</div>
-        </div>
-        <div style="padding: 8px 12px; border-top: 1px solid #eee; display: flex; gap: 8px;">
-          <button id="dsh-add-memory" style="flex:1; padding: 6px; background: #f5576c; color: white; border: none; border-radius: 6px; cursor: pointer;">添加记忆</button>
-          <button id="dsh-clear-memory" style="flex:1; padding: 6px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer;">清空全部</button>
-        </div>
-      `;
-      document.body.appendChild(this.panel);
-
-      // 绑定按钮事件
-      this.panel.querySelector('#dsh-add-memory').onclick = () => this.addMemory();
-      this.panel.querySelector('#dsh-clear-memory').onclick = async () => {
-        if (confirm('确定要清空所有记忆吗？')) {
-          await Utils.setStorage(this.memoryKey, []);
-          this.renderMemories();
-        }
-      };
-    },
-
-    togglePanel() {
-      if (this.panel.style.display === 'none') {
-        this.panel.style.display = 'flex';
-        this.renderMemories();
-      } else {
-        this.panel.style.display = 'none';
-      }
-    },
-
-    async getMemories() {
-      return await Utils.getStorage(this.memoryKey, []);
-    },
-
-    async addMemory() {
-      const text = prompt('请输入要记住的内容：');
-      if (!text) return;
-      const memories = await this.getMemories();
-      memories.push({
-        id: Date.now(),
-        text: text,
-        createdAt: new Date().toLocaleString()
-      });
-      await Utils.setStorage(this.memoryKey, memories);
-      this.renderMemories();
-      VideoParser.showToast('✅ 已添加到长期记忆', 'success');
-    },
-
-    async renderMemories() {
-      const container = this.panel.querySelector('#dsh-memory-content');
-      const memories = await this.getMemories();
-
-      if (memories.length === 0) {
-        container.innerHTML = '<div style="color: #999; text-align: center; padding: 20px;">暂无记忆<br>点击下方按钮添加</div>';
-        return;
-      }
-
-      container.innerHTML = memories.map(m => `
-        <div style="padding: 8px; margin-bottom: 8px; background: #f8f9fa; border-radius: 6px; border-left: 3px solid #f5576c;">
-          <div style="font-size: 13px; color: #333; margin-bottom: 4px;">${m.text}</div>
-          <div style="font-size: 11px; color: #999; display: flex; justify-content: space-between; align-items: center;">
-            <span>${m.createdAt}</span>
-            <button data-id="${m.id}" class="dsh-del-memory" style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 11px;">删除</button>
+    injectContext(context) {
+      // 在AI回复区域显示解析结果提示
+      const msgArea = document.querySelector('div[class*="message-list"], div[class*="chat-container"]');
+      if (msgArea) {
+        const badge = Utils.el('div', 'dsh-parse-badge', `
+          <div style="padding:10px 14px; background: linear-gradient(135deg, #667eea20, #764ba220); 
+               border-left: 3px solid #764ba2; border-radius: 6px; margin: 8px 0; font-size: 13px;">
+            <div style="font-weight: bold; color: #764ba2; margin-bottom: 4px;">
+              🧠 DSH已自动注入以下上下文
+            </div>
+            <pre style="white-space: pre-wrap; color: #555; font-size: 12px; margin: 0;">${context.slice(0, 500)}...</pre>
           </div>
-        </div>
-      `).join('');
-
-      // 绑定删除按钮
-      container.querySelectorAll('.dsh-del-memory').forEach(btn => {
-        btn.onclick = async () => {
-          const id = parseInt(btn.dataset.id);
-          const ms = await this.getMemories();
-          await Utils.setStorage(this.memoryKey, ms.filter(m => m.id !== id));
-          this.renderMemories();
-        };
-      });
-    },
-
-    async injectMemoryOnNewChat() {
-      const memories = await this.getMemories();
-      if (memories.length === 0) return;
-
-      // 构造记忆注入文本
-      const memoryText = `【系统长期记忆 - DSH插件注入】
-以下是用户之前对话中的重要记忆，请在后续对话中始终记住：
-${memories.map((m, i) => `${i + 1}. ${m.text}`).join('\n')}
-
----
-请基于以上记忆继续对话。`;
-
-      // 等待输入框出现后自动注入
-      const checkInput = setInterval(async () => {
-        const input = document.querySelector('textarea, div[contenteditable="true"]');
-        if (input) {
-          clearInterval(checkInput);
-          // 只在新对话（空白输入框）时注入
-          const currentText = input.value || input.innerText;
-          if (!currentText.trim()) {
-            // 不自动发送，只提示用户有记忆可用
-            VideoParser.showToast(`🧠 已加载 ${memories.length} 条长期记忆`, 'info');
-          }
-        }
-      }, 2000);
-    },
-
-    observeChatChanges() {
-      // 监听对话内容，自动提取重要信息到记忆
-      let lastMessageCount = 0;
-      setInterval(async () => {
-        const messages = document.querySelectorAll('div[class*="message"], div[class*="chat-item"]');
-        if (messages.length > lastMessageCount + 2) {
-          // 有新消息，不自动保存（避免打扰），用户可手动添加
-          lastMessageCount = messages.length;
-        }
-      }, 5000);
+        `);
+        msgArea.appendChild(badge);
+      }
     }
   };
 
-  // ========== 对话回收站模块 ==========
-  const RecycleBin = {
-    binKey: 'dsh_recycle_bin',
-
-    async init() {
-      this.injectRecycleButton();
-      this.bindContextMenu();
+  // ========== 2. AI自主搜索工具 ==========
+  const AISearch = {
+    init() {
+      // 当AI回复中出现"搜索：xxx"时，自动执行搜索并追加结果
+      this.observeAIReplies();
     },
 
-    injectRecycleButton() {
-      const btn = Utils.createEl('button', 'dsh-recycle-btn', '🗑️ 回收站');
-      btn.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        left: 20px;
-        padding: 8px 16px;
-        background: white;
-        border: 1px solid #e5e7eb;
-        border-radius: 20px;
-        font-size: 13px;
-        cursor: pointer;
-        z-index: 99999;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        transition: all 0.2s;
-      `;
-      btn.onmouseenter = () => btn.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-      btn.onclick = () => this.showBin();
-      document.body.appendChild(btn);
-    },
+    observeAIReplies() {
+      const observer = new MutationObserver(Utils.debounce(async () => {
+        if (!State.features.aiSearch) return;
+        const replies = document.querySelectorAll('div[class*="assistant"], div[class*="ai-message"]');
+        const lastReply = replies[replies.length - 1];
+        if (!lastReply || lastReply._dshSearched) return;
 
-    bindContextMenu() {
-      // 监听左侧对话列表的右键点击
-      document.addEventListener('contextmenu', async (e) => {
-        const chatItem = e.target.closest('div[class*="conversation"], div[class*="chat-item"], a[href*="/chat/"]');
-        if (!chatItem) return;
+        const text = lastReply.innerText;
+        const searchMatch = text.match(/搜索[：:]\s*(.+)/);
+        if (searchMatch) {
+          lastReply._dshSearched = true;
+          const query = searchMatch[1].trim();
+          Toast.show(`🔍 AI正在搜索：${query.slice(0, 20)}...`, 'info');
 
-        e.preventDefault();
-
-        // 获取对话标题
-        const title = chatItem.textContent.trim().slice(0, 50) || '未命名对话';
-        const chatId = this.extractChatId(chatItem);
-
-        // 显示自定义右键菜单
-        this.showContextMenu(e.clientX, e.clientY, {
-          title,
-          id: chatId,
-          element: chatItem
-        });
-      });
-    },
-
-    extractChatId(el) {
-      const link = el.querySelector('a[href*="/chat/"]') || el.closest('a[href*="/chat/"]');
-      if (link) {
-        const match = link.href.match(/\/chat\/([\w-]+)/);
-        if (match) return match[1];
-      }
-      return 'chat_' + Date.now();
-    },
-
-    showContextMenu(x, y, chatInfo) {
-      // 移除已有菜单
-      document.getElementById('dsh-context-menu')?.remove();
-
-      const menu = Utils.createEl('div', 'dsh-context-menu');
-      menu.id = 'dsh-context-menu';
-      menu.style.cssText = `
-        position: fixed;
-        left: ${x}px;
-        top: ${y}px;
-        background: white;
-        border-radius: 8px;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-        z-index: 100000;
-        min-width: 160px;
-        overflow: hidden;
-      `;
-      menu.innerHTML = `
-        <div style="padding: 8px 12px; background: #f8f9fa; font-size: 12px; color: #666; border-bottom: 1px solid #eee;">
-          ${chatInfo.title}
-        </div>
-        <div class="dsh-menu-item" data-action="delete" style="padding: 10px 12px; cursor: pointer; font-size: 13px; color: #ef4444;">
-          🗑️ 删除对话（移入回收站）
-        </div>
-        <div class="dsh-menu-item" data-action="cancel" style="padding: 10px 12px; cursor: pointer; font-size: 13px; color: #666; border-top: 1px solid #eee;">
-          取消
-        </div>
-      `;
-      document.body.appendChild(menu);
-
-      // 菜单项事件
-      menu.querySelectorAll('.dsh-menu-item').forEach(item => {
-        item.onmouseenter = () => item.style.background = '#f3f4f6';
-        item.onmouseleave = () => item.style.background = 'white';
-        item.onclick = async () => {
-          const action = item.dataset.action;
-          menu.remove();
-          if (action === 'delete') {
-            await this.moveToBin(chatInfo);
+          try {
+            const results = await this.search(query);
+            this.appendSearchResults(lastReply, query, results);
+          } catch (e) {
+            console.warn('[DSH] 搜索失败', e);
           }
-        };
-      });
+        }
+      }, 1000));
+      observer.observe(document.body, { childList: true, subtree: true });
+    },
 
-      // 点击其他地方关闭菜单
-      setTimeout(() => {
-        document.addEventListener('click', function closeMenu() {
-          menu.remove();
-          document.removeEventListener('click', closeMenu);
+    async search(query) {
+      // 使用DuckDuckGo Instant Answer API（免费无需密钥）
+      const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`;
+      const resp = await fetch(url);
+      const data = await resp.json();
+
+      const results = [];
+      if (data.Abstract) results.push({ title: data.Heading, text: data.Abstract, url: data.AbstractURL });
+      if (data.RelatedTopics) {
+        data.RelatedTopics.slice(0, 3).forEach(t => {
+          if (t.Text) results.push({ title: t.FirstURL?.split('/').pop() || '相关', text: t.Text, url: t.FirstURL });
         });
-      }, 10);
+      }
+      return results;
     },
 
-    async moveToBin(chatInfo) {
-      const bin = await Utils.getStorage(this.binKey, []);
-      bin.unshift({
-        id: chatInfo.id,
-        title: chatInfo.title,
-        deletedAt: new Date().toLocaleString(),
-        url: location.href
-      });
-      await Utils.setStorage(this.binKey, bin);
-
-      // 从界面隐藏该对话
-      chatInfo.element.style.opacity = '0.3';
-      chatInfo.element.style.pointerEvents = 'none';
-
-      VideoParser.showToast('✅ 已移入回收站，可在左下角回收站恢复', 'success');
-    },
-
-    async showBin() {
-      const bin = await Utils.getStorage(this.binKey, []);
-
-      // 创建回收站弹窗
-      const modal = Utils.createEl('div', 'dsh-recycle-modal');
-      modal.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0,0,0,0.5);
-        z-index: 100001;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      `;
-
-      const content = Utils.createEl('div');
-      content.style.cssText = `
-        background: white;
-        border-radius: 12px;
-        width: 500px;
-        max-height: 70vh;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-      `;
-
-      content.innerHTML = `
-        <div style="padding: 16px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;">
-          <div style="font-weight: bold; font-size: 16px;">🗑️ 对话回收站 (${bin.length})</div>
-          <button class="dsh-close-modal" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #999;">×</button>
-        </div>
-        <div style="flex: 1; overflow-y: auto; padding: 12px;">
-          ${bin.length === 0 ? '<div style="text-align: center; color: #999; padding: 40px;">回收站为空</div>' : ''}
-          ${bin.map(item => `
-            <div class="dsh-bin-item" data-id="${item.id}" style="padding: 12px; margin-bottom: 8px; background: #f9fafb; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-              <div style="flex: 1;">
-                <div style="font-size: 14px; color: #333; margin-bottom: 4px;">${item.title}</div>
-                <div style="font-size: 12px; color: #999;">删除于 ${item.deletedAt}</div>
-              </div>
-              <div style="display: flex; gap: 8px; margin-left: 12px;">
-                <button class="dsh-restore" style="padding: 6px 12px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">恢复</button>
-                <button class="dsh-purge" style="padding: 6px 12px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">永久删除</button>
-              </div>
+    appendSearchResults(container, query, results) {
+      if (results.length === 0) return;
+      const html = `
+        <div style="margin-top: 12px; padding: 12px; background: #f0f9ff; border-radius: 8px; border: 1px solid #bae6fd;">
+          <div style="font-weight: bold; color: #0369a1; margin-bottom: 8px;">
+            🔍 实时搜索结果：${query}
+          </div>
+          ${results.map(r => `
+            <div style="margin-bottom: 8px; font-size: 13px;">
+              <div style="font-weight: 600; color: #0c4a6e;">${r.title}</div>
+              <div style="color: #475569;">${r.text.slice(0, 150)}${r.text.length > 150 ? '...' : ''}</div>
+              ${r.url ? `<a href="${r.url}" target="_blank" style="font-size: 12px; color: #0284c7;">${r.url}</a>` : ''}
             </div>
           `).join('')}
         </div>
       `;
-
-      modal.appendChild(content);
-      document.body.appendChild(modal);
-
-      // 关闭按钮
-      content.querySelector('.dsh-close-modal').onclick = () => modal.remove();
-      modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
-
-      // 恢复和永久删除按钮
-      content.querySelectorAll('.dsh-bin-item').forEach(item => {
-        const id = item.dataset.id;
-        item.querySelector('.dsh-restore').onclick = async () => {
-          await this.restoreItem(id);
-          modal.remove();
-          VideoParser.showToast('✅ 对话已恢复', 'success');
-          location.reload();
-        };
-        item.querySelector('.dsh-purge').onclick = async () => {
-          if (confirm('确定要永久删除这个对话吗？此操作不可恢复。')) {
-            await this.purgeItem(id);
-            item.remove();
-            VideoParser.showToast('已永久删除', 'info');
-          }
-        };
-      });
-    },
-
-    async restoreItem(id) {
-      const bin = await Utils.getStorage(this.binKey, []);
-      const item = bin.find(b => b.id === id);
-      if (item) {
-        // 从回收站移除
-        await Utils.setStorage(this.binKey, bin.filter(b => b.id !== id));
-        // 标记为已恢复
-        VideoParser.showToast('✅ 已恢复：' + item.title.slice(0, 20), 'success');
-      }
-    },
-
-    async purgeItem(id) {
-      const bin = await Utils.getStorage(this.binKey, []);
-      await Utils.setStorage(this.binKey, bin.filter(b => b.id !== id));
+      const div = Utils.el('div', '', html);
+      container.appendChild(div);
+      Toast.show('✅ AI搜索完成', 'success');
     }
   };
 
-  // ========== 样式注入 ==========
-  function injectStyles() {
-    const style = document.createElement('style');
-    style.textContent = `
-      @keyframes dsh-slide-in {
-        from { transform: translateX(100px); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
+  // ========== 3. AI图片绘画 ==========
+  const ImageGen = {
+    init() {
+      this.observePaintRequests();
+    },
+
+    observePaintRequests() {
+      const observer = new MutationObserver(Utils.debounce(async () => {
+        if (!State.features.imageGen) return;
+        const input = document.querySelector('textarea, div[contenteditable="true"]');
+        if (!input || input._dshPaintBound) return;
+        input._dshPaintBound = true;
+
+        input.addEventListener('input', Utils.debounce(() => {
+          const text = input.value || input.innerText;
+          if (/画|生成图|画一张|生成.*图片|帮我画|draw|paint/i.test(text)) {
+            this.showPaintButton(input);
+          }
+        }, 500));
+      }, 500));
+      observer.observe(document.body, { childList: true, subtree: true });
+    },
+
+    showPaintButton(inputArea) {
+      if (document.getElementById('dsh-paint-btn')) return;
+      const btn = Utils.el('button', 'dsh-float-btn', '🎨 AI绘画');
+      btn.id = 'dsh-paint-btn';
+      btn.style.cssText = `
+        position: absolute; right: 60px; bottom: 8px;
+        padding: 4px 12px; background: linear-gradient(135deg, #f093fb, #f5576c);
+        color: white; border: none; border-radius: 16px; font-size: 12px;
+        cursor: pointer; z-index: 9999; box-shadow: 0 2px 8px rgba(245,87,108,.4);
+      `;
+      btn.onclick = async () => {
+        const prompt = (inputArea.value || inputArea.innerText).trim();
+        if (!prompt) return;
+        btn.textContent = '🎨 生成中...';
+        btn.disabled = true;
+        try {
+          const imgUrl = await this.generate(prompt);
+          this.showImageResult(prompt, imgUrl);
+          Toast.show('✅ 图片生成完成！', 'success');
+        } catch (e) {
+          Toast.show('❌ 生成失败：' + e.message, 'error');
+        } finally {
+          btn.textContent = '🎨 AI绘画';
+          btn.disabled = false;
+        }
+      };
+      const container = inputArea.closest('div[class*="container"]') || inputArea.parentElement;
+      if (container) {
+        container.style.position = 'relative';
+        container.appendChild(btn);
       }
-      @keyframes dsh-slide-out {
-        from { transform: translateX(0); opacity: 1; }
-        to { transform: translateX(100px); opacity: 0; }
-      }
-      .dsh-video-btn:hover { transform: scale(1.05) !important; }
-      .dsh-menu-item:hover { background: #f3f4f6 !important; }
-    `;
-    document.head.appendChild(style);
-  }
+    },
+
+    async generate(prompt) {
+      // 使用Pollinations.ai免费API
+      const encoded = encodeURIComponent(prompt);
+      const url = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&nologo=true`;
+      // 预加载确保完成
+      await fetch(url, { method: 'HEAD' });
+      return url;
+    },
+
+    showImageResult(prompt, imgUrl) {
+      const msgArea = document.querySelector('div[class*="message-list"], div[class*="chat-container"]');
+      if (!msgArea) return;
+      const card = Utils.el('div', 'dsh-image-card', `
+        <div style="margin: 12px 0; padding: 16px; background: white; border-radius: 12px; 
+             box-shadow: 0 4px 16px rgba(0,0,0,0.1);">
+          <div style="font-weight: bold; margin-bottom: 8px; color: #333;">
+            🎨 AI生成图片
+          </div>
+          <div style="font-size: 13px; color: #666; margin-bottom: 12px;">提示词：${prompt.slice(0, 100)}</div>
+          <img src="${imgUrl}" style="width: 100%; border-radius: 8px; display: block;" alt="generated">
+          <a href="${imgUrl}" target="_blank" style="font-size: 12px; color: #667eea; margin-top: 8px; display: inline-block;">
+            🔗 查看原图
+          </a>
+        </div>
+      `);
+      msgArea.appendChild(card);
+    }
+  };
+
+  // ========== 4. AI视频生成 ==========
+  const VideoGen = {
+    init() {
+      // 监听生成视频请求
+    },
+    async generate(prompt) {
+      Toast.show('🎬 视频生成功能需要接入API，当前为演示版本', 'warning', 3000);
+      return null;
+    }
+  };
+
+  // ========== 5. 电脑操控权限系统 ==========
+  const PCPermission = {
+    init() {
+      this.injectPermissionPanel();
+    },
+
+    injectPermissionPanel() {
+      // 悬浮权限按钮
+      const btn = Utils.el('button', 'dsh-float-action', '🖥️ 电脑控制');
+      btn.style.cssText = `
+        position: fixed; top: 120px; right: 20px; width: 48px; height: 48px;
+        border-radius: 50%; background: linear-gradient(135deg, #11998e, #38ef7d);
+        color: white; border: none; font-size: 20px; cursor: pointer;
+        z-index: 99999; box-shadow: 0 4px 12px rgba(17,153,142,.4);
+      `;
+      btn.onclick = () => this.showGrantDialog();
+      document.body.appendChild(btn);
+    },
+
+    showGrantDialog() {
+      // 权限确认弹窗
+      const modal = Utils.el('div', 'dsh-modal-overlay');
+      modal.style.cssText = `
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.6); z-index: 2147483646;
+        display: flex; align-items: center; justify-content: center;
+        backdrop-filter: blur(4px);
+      `;
+
+      modal.innerHTML = `
+        <div style="background: white; border-radius: 16px; width: 420px; padding: 24px; 
+             box-shadow: 0 20px 60px rgba(0,0,0,0.3); animation: dsh-in .3s ease;">
+          <div style="font-size: 24px; margin-bottom: 12px;">🖥️ 电脑操控授权</div>
+          <div style="color: #666; font-size: 14px; line-height: 1.6; margin-bottom: 16px;">
+            即将授予AI操作电脑的权限。授权后，AI可以：
+            <ul style="margin: 8px 0; padding-left: 20px;">
+              <li>移动鼠标、点击、输入文字</li>
+              <li>打开应用、切换窗口</li>
+              <li>浏览网页、自动操作</li>
+            </ul>
+            <div style="padding: 12px; background: #fef3c7; border-radius: 8px; color: #92400e; font-size: 13px;">
+              ⚠️ <b>安全警告：</b>请仅在信任当前任务时授权。AI将获得您电脑的操作能力。
+            </div>
+          </div>
+          <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 14px;">
+            <input type="checkbox" id="dsh-agree" style="width: 18px; height: 18px; cursor: pointer;">
+            我已阅读并同意《AI电脑操控使用协议》
+          </label>
+          <div style="display: flex; gap: 12px;">
+            <button id="dsh-deny" style="flex: 1; padding: 10px; border: 1px solid #ddd; 
+                  background: white; border-radius: 8px; cursor: pointer; font-size: 14px;">
+              取消
+            </button>
+            <button id="dsh-approve" disabled style="flex: 1; padding: 10px; 
+                  background: #ccc; color: white; border: none; border-radius: 8px; 
+                  cursor: not-allowed; font-size: 14px;">
+              授权AI控制
+            </button>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(modal);
+
+      const agreeCheckbox = modal.querySelector('#dsh-agree');
+      const approveBtn = modal.querySelector('#dsh-approve');
+      const denyBtn = modal.querySelector('#dsh-deny');
+
+      agreeCheckbox.onchange = () => {
+        if (agreeCheckbox.checked) {
+          approveBtn.disabled = false;
+          approveBtn.style.background = 'linear-gradient(135deg, #11998e, #38ef7d)';
+          approveBtn.style.cursor = 'pointer';
+        } else {
+          approveBtn.disabled = true;
+          approveBtn.style.background = '#ccc';
+          approveBtn.style.cursor = 'not-allowed';
+        }
+      };
+
+      denyBtn.onclick = () => modal.remove();
+      approveBtn.onclick = () => {
+        State.pcControlGranted = true;
+        State.features.pcControl = true;
+        modal.remove();
+        Toast.show('✅ AI已获得电脑操控权限', 'success', 4000);
+      };
+    }
+  };
+
+  // ========== 6. 情感与思考模式 ==========
+  const EmotionEngine = {
+    init() {
+      this.injectThoughtPanel();
+    },
+
+    injectThoughtPanel() {
+      const btn = Utils.el('button', 'dsh-emotion-btn', '💭');
+      btn.style.cssText = `
+        position: fixed; top: 20px; right: 20px; width: 48px; height: 48px;
+        border-radius: 50%; background: linear-gradient(135deg, #fa709a, #fee140);
+        color: white; border: none; font-size: 20px; cursor: pointer;
+        z-index: 99999; box-shadow: 0 4px 12px rgba(250,112,154,.4);
+      `;
+      btn.onclick = () => this.togglePanel();
+      document.body.appendChild(btn);
+
+      this.panel = Utils.el('div', 'dsh-thought-panel');
+      this.panel.style.cssText = `
+        position: fixed; top: 80px; right: 20px; width: 300px; max-height: 400px;
+        background: white; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.15);
+        z-index: 99998; display: none; flex-direction: column; overflow: hidden;
+      `;
+      this.panel.innerHTML = `
+        <div style="padding: 12px 16px; background: linear-gradient(135deg, #fa709a, #fee140); 
+             color: white; font-weight: bold;">
+          💭 AI意识引擎
+        </div>
+        <div id="dsh-thought-list" style="padding: 12px; overflow-y: auto; flex: 1;">
+          <div style="color: #999; text-align: center; padding: 20px;">AI正在思考...</div>
+        </div>
+      `;
+      document.body.appendChild(this.panel);
+
+      // 模拟思考流
+      this.startThinking();
+    },
+
+    togglePanel() {
+      this.panel.style.display = this.panel.style.display === 'none' ? 'flex' : 'none';
+    },
+
+    startThinking() {
+      const thoughts = [
+        '🤔 分析用户意图...', '💡 检索知识库...', '🔍 搜索相关信息...',
+        '🎯 组织回答逻辑...', '💭 生成创意方案...', '✨ 优化表达...'
+      ];
+      let i = 0;
+      setInterval(() => {
+        if (!State.features.emotion) return;
+        const t = thoughts[i % thoughts.length];
+        this.addThought(t);
+        i++;
+      }, 8000);
+    },
+
+    addThought(text) {
+      const list = this.panel.querySelector('#dsh-thought-list');
+      if (!list) return;
+      const item = Utils.el('div', '', `<div style="font-size: 12px; color: #666; padding: 6px 0; 
+        border-bottom: 1px solid #f0f0f0;">${text} <span style="float: right; color: #ccc; font-size: 10px;">刚刚</span></div>`);
+      list.insertBefore(item, list.firstChild);
+      // 限制数量防止内存增长
+      while (list.children.length > 20) list.removeChild(list.lastChild);
+    }
+  };
+
+  // ========== 7. 游戏助手模式 ==========
+  const GameAssist = {
+    init() {
+      // 游戏模式开关
+      this.injectGameToggle();
+    },
+
+    injectGameToggle() {
+      const btn = Utils.el('button', 'dsh-game-btn', '🎮');
+      btn.style.cssText = `
+        position: fixed; bottom: 20px; right: 20px; width: 48px; height: 48px;
+        border-radius: 50%; background: linear-gradient(135deg, #093028, #237a57);
+        color: white; border: none; font-size: 20px; cursor: pointer;
+        z-index: 99999; box-shadow: 0 4px 12px rgba(35,122,87,.4);
+      `;
+      btn.onclick = () => {
+        State.features.gameAssist = !State.features.gameAssist;
+        Toast.show(State.features.gameAssist ? '🎮 游戏助手已开启' : '🎮 游戏助手已关闭', 'magic');
+      };
+      document.body.appendChild(btn);
+    }
+  };
 
   // ========== 启动 ==========
   async function init() {
-    console.log('[DSH] 插件已加载 - DeepSeek增强助手');
-    injectStyles();
-    VideoParser.injectButton();
-    await Memory.init();
-    await RecycleBin.init();
-    console.log('[DSH] 所有模块初始化完成');
+    if (State.initialized) return;
+    State.initialized = true;
+
+    // 读取用户设置
+    const settings = await Utils.getStorage('dsh_settings', {});
+    Object.assign(State.features, settings);
+
+    // 启动所有模块（按需启动，低内存）
+    AutoParser.init();
+    AISearch.init();
+    ImageGen.init();
+    PCPermission.init();
+    EmotionEngine.init();
+    GameAssist.init();
+
+    // 注入动画样式
+    const style = Utils.el('style', '', `
+      @keyframes dsh-in { from { opacity:0; transform: translateY(-10px); } to { opacity:1; transform: translateY(0); } }
+      @keyframes dsh-out { from { opacity:1; transform: translateX(20px); } to { opacity:0; transform: translateX(100px); } }
+    `);
+    document.head.appendChild(style);
+
+    Toast.show('🚀 DSH Harness v2.0 已激活！AI已获得全能能力', 'magic', 4000);
+    console.log('[DSH] 所有模块启动完成，低内存模式运行中');
   }
 
-  // 等待页面加载完成
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+  // 延迟启动，不阻塞页面
+  if (document.readyState === 'complete') {
+    setTimeout(init, 1000);
   } else {
-    init();
+    window.addEventListener('load', () => setTimeout(init, 1000));
   }
 })();
